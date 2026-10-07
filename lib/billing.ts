@@ -10,17 +10,19 @@ export async function getBillingContext() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('organization_id, role, organizations(id, name, plan, max_students, max_teachers)')
+    .select('id, organization_id, role, organizations(id, name, plan, max_students, max_teachers)')
     .eq('id', user.id)
     .maybeSingle()
 
   const organization = Array.isArray(profile?.organizations) ? profile.organizations[0] : profile?.organizations
   if (!profile || !organization) return null
 
-  const [{ data: subscription }, { data: usage }] = await Promise.all([
+  const [{ data: subscription }, { data: rawUsage }] = await Promise.all([
     supabase.from('subscriptions').select('*').eq('organization_id', organization.id).maybeSingle(),
     supabase.rpc('billing_usage', { target_org_id: organization.id }).maybeSingle(),
   ])
+
+  const usage = (rawUsage ?? null) as { student_count: number; teacher_count: number } | null
 
   return { supabase, user, profile, organization, subscription, usage }
 }
@@ -71,7 +73,7 @@ export async function cancelBillingSubscription() {
     const { razorpay } = await import('@/lib/razorpay')
     if (!razorpay) throw new Error('Razorpay is not configured.')
     const id = subscriptionId.replace('razorpay:', '')
-    await razorpay.subscriptions.cancel(id, { cancel_at_cycle_end: 1 })
+    await razorpay.subscriptions.cancel(id, 1)
     await context.supabase.from('subscriptions').update({ cancel_at_period_end: true }).eq('organization_id', context.organization.id)
     return
   }
