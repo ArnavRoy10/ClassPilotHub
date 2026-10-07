@@ -92,18 +92,20 @@ export function PricingSection() {
         </div>
       </div>
 
-      <div className="mt-14 grid items-start gap-6 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-14 grid items-stretch gap-6 pt-3 sm:grid-cols-2 xl:grid-cols-4">
         {plans.map((plan) => (
+          <div key={plan.name} className="relative flex">
+            {plan.featured && (
+              <Badge className="absolute -top-3 left-6 z-10 shadow-sm">Most popular</Badge>
+            )}
           <Card
-            key={plan.name}
             className={cn(
-              'relative flex h-full flex-col',
+              'flex h-full w-full flex-col',
               plan.featured
                 ? 'border-primary shadow-lg shadow-primary/10'
                 : 'border-border/70',
             )}
           >
-            {plan.featured && <Badge className="absolute -top-3 left-6">Most popular</Badge>}
             <CardHeader>
               <CardTitle className="font-display text-lg">{plan.name}</CardTitle>
               <p className="text-xs font-medium text-primary">{plan.audience}</p>
@@ -133,6 +135,7 @@ export function PricingSection() {
               </Button>
             </CardFooter>
           </Card>
+          </div>
         ))}
       </div>
     </section>
