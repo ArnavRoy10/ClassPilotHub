@@ -1,0 +1,49 @@
+{
+  "node": {
+    "4002241e8b356e020192db34ef49aca393c42c2157": {
+      "workers": {
+        "app/admin/leads/page": {
+          "moduleId": 18277,
+          "async": false,
+          "codeHash": null
+        }
+      },
+      "exportedName": "updateLead",
+      "filename": "app/admin/leads/actions.ts"
+    },
+    "400899abf24a8246b00e4aef576a1cce29764d98e2": {
+      "workers": {
+        "app/admin/leads/page": {
+          "moduleId": 18277,
+          "async": false,
+          "codeHash": null
+        }
+      },
+      "exportedName": "addActivity",
+      "filename": "app/admin/leads/actions.ts"
+    },
+    "4028f882427b8f05a3d1e5b549081b1111ef99bcd0": {
+      "workers": {
+        "app/admin/leads/page": {
+          "moduleId": 18277,
+          "async": false,
+          "codeHash": null
+        }
+      },
+      "exportedName": "createLead",
+      "filename": "app/admin/leads/actions.ts"
+    },
+    "40b6dff0bfd8de6ca545fad19563c43914aea70ed6": {
+      "workers": {
+        "app/admin/leads/page": {
+          "moduleId": 18277,
+          "async": false,
+          "codeHash": null
+        }
+      },
+      "exportedName": "deleteLead",
+      "filename": "app/admin/leads/actions.ts"
+    }
+  },
+  "edge": {}
+}
