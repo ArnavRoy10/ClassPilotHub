@@ -14,6 +14,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
+import { Logo } from '@/components/brand/logo'
 import { appNav } from '@/lib/nav'
 import type { UserContext } from '@/lib/supabase/user-context'
 
@@ -23,11 +24,8 @@ export function AppSidebar({ userContext }: { userContext: UserContext | null })
   return (
     <Sidebar>
       <SidebarHeader>
-        <Link href="/dashboard" className="flex items-center gap-2 px-2 py-1.5 text-lg font-bold">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-sm text-primary-foreground">
-            CP
-          </div>
-          <span>ClassPilot</span>
+        <Link href="/dashboard" className="px-2 py-1.5" aria-label="ClassPilot dashboard">
+          <Logo />
         </Link>
       </SidebarHeader>
 
