@@ -66,7 +66,7 @@ export function BillingPanel({ organization, subscription, usage }: Props) {
         body: JSON.stringify({ plan }),
       })
       const result = await response.json()
-      if (!response.ok) throw new Error(result.error ?? 'Unable to start checkout.')
+      if (!response.ok) throw new Error([result.error ?? 'Unable to start checkout.', result.detail].filter(Boolean).join(' '))
 
       const razorpayCheckout = new window.Razorpay({
         key: result.keyId,
