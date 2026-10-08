@@ -32,7 +32,13 @@ export async function POST(request: Request) {
       keyId: process.env.RAZORPAY_KEY_ID, 
       plan: selected.name 
     })
-  } catch {
-    return NextResponse.json({ error: 'Unable to start Razorpay checkout.' }, { status: 502 })
+  } catch (error) {
+    // Razorpay SDK errors are plain objects: { statusCode, error: { code, description } }
+    const rzp = (error as { statusCode?: number; error?: { code?: string; description?: string } } | null) ?? {}
+    console.error('Razorpay checkout failed:', rzp.statusCode, rzp.error?.code, rzp.error?.description ?? error)
+    return NextResponse.json(
+      { error: 'Unable to start Razorpay checkout.', detail: rzp.error?.description ?? null },
+      { status: 502 },
+    )
   }
 }
