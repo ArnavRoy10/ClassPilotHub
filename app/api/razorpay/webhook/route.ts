@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAdminClient } from '@/lib/supabase/admin'
 import { verifyRazorpaySignature } from '@/lib/razorpay'
+import { PLANS, normalizePlan } from '@/lib/plans'
 
 export async function POST(request: Request) {
   const payload = await request.text()
@@ -33,20 +34,27 @@ export async function POST(request: Request) {
   const entity = event.payload?.subscription?.entity
   const organizationId = entity?.notes?.organization_id
   if (organizationId && entity?.id) {
-    const plan = entity.notes?.plan ?? 'free'
-    const status = entity.status === 'active' ? 'active' : entity.status === 'cancelled' ? 'canceled' : 'incomplete'
-    await adminClient.from('subscriptions').upsert({ organization_id: organizationId, stripe_subscription_id: `razorpay:${entity.id}`, plan, status, current_period_start: entity.current_start ? new Date(entity.current_start * 1000).toISOString() : null, current_period_end: entity.current_end ? new Date(entity.current_end * 1000).toISOString() : null, updated_at: new Date().toISOString() }, { onConflict: 'organization_id' })
+    const plan = normalizePlan(entity.notes?.plan)
+    const subscriptionId = `razorpay:${entity.id}`
+    const razorpayStatus = String(entity.status ?? '')
+    const periodStart = entity.current_start ? new Date(entity.current_start * 1000).toISOString() : null
+    const periodEnd = entity.current_end ? new Date(entity.current_end * 1000).toISOString() : null
 
-    // Only raise/lower seat limits once the subscription is actually active — a cancelled
-    // or incomplete subscription should not grant the plan's limits.
-    if (status === 'active') {
-      const limits = plan === 'solo' ? { max_students: 50, max_teachers: 5 }
-        : plan === 'starter' ? { max_students: 150, max_teachers: 15 }
-        : plan === 'growth' ? { max_students: 500, max_teachers: 40 }
-        : plan === 'pro' ? { max_students: 100000, max_teachers: 100 }
-        : { max_students: 25, max_teachers: 3 }
-      await adminClient.from('organizations').update({ plan, ...limits }).eq('id', organizationId)
+    const { data: existing } = await adminClient.from('subscriptions').select('stripe_subscription_id').eq('organization_id', organizationId).maybeSingle()
+    const isCurrent = !existing?.stripe_subscription_id || existing.stripe_subscription_id === subscriptionId
+
+    if (razorpayStatus === 'active') {
+      await adminClient.from('subscriptions').upsert({ organization_id: organizationId, stripe_subscription_id: subscriptionId, plan: plan ?? 'free', status: 'active', cancel_at_period_end: false, current_period_start: periodStart, current_period_end: periodEnd, updated_at: new Date().toISOString() }, { onConflict: 'organization_id' })
+      // Seat limits follow the plan only once it is actually paid and active.
+      if (plan) await adminClient.from('organizations').update({ plan, max_students: PLANS[plan].maxStudents, max_teachers: PLANS[plan].maxTeachers }).eq('id', organizationId)
+    } else if (isCurrent && ['cancelled', 'completed', 'expired'].includes(razorpayStatus)) {
+      // Keep the paid-through date so access continues until the period actually ends.
+      await adminClient.from('subscriptions').update({ status: 'canceled', ...(periodEnd ? { current_period_end: periodEnd } : {}), updated_at: new Date().toISOString() }).eq('organization_id', organizationId)
+    } else if (isCurrent && ['halted', 'pending'].includes(razorpayStatus)) {
+      await adminClient.from('subscriptions').update({ status: 'past_due', updated_at: new Date().toISOString() }).eq('organization_id', organizationId)
     }
+    // 'created' / 'authenticated' are deliberately ignored: they must not overwrite a running
+    // free trial or an already-paid plan (this used to flip trials to "incomplete").
   }
 
   // Payment Links: a parent finished paying via a fee payment link
