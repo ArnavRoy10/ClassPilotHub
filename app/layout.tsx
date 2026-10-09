@@ -1,91 +1,41 @@
-import { Analytics } from '@vercel/analytics/next'
-import type { Metadata, Viewport } from 'next'
-import { Inter, Plus_Jakarta_Sans } from 'next/font/google'
-import { TooltipProvider } from '@/components/ui/tooltip'
-import { Toaster } from '@/components/ui/sonner'
-import './globals.css'
+import { redirect } from 'next/navigation'
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
+import { AppSidebar } from '@/components/app/app-sidebar'
+import { AppTopbar } from '@/components/app/app-topbar'
+import { PaymentDuePopup, SuspendedScreen } from '@/components/app/billing-gate'
+import { createClient } from '@/lib/supabase/server'
+import { getUserContext } from '@/lib/supabase/user-context'
+import { getOrganizationBillingState } from '@/lib/billing-gate'
 
-const inter = Inter({
-  subsets: ['latin'],
-  variable: '--font-inter',
-  display: 'swap',
-})
-
-const jakarta = Plus_Jakarta_Sans({
-  subsets: ['latin'],
-  variable: '--font-jakarta',
-  display: 'swap',
-})
-
-export const metadata: Metadata = {
-  title: {
-    default: 'ClassPilot — Run your coaching center in one place',
-    template: '%s | ClassPilot',
-  },
-  description:
-    'ClassPilot helps coaching centers manage students, teachers, classes, attendance, fees, tests, and results from one focused workspace.',
-  applicationName: 'ClassPilot',
-  keywords: ['coaching center software', 'tutor management software', 'student management', 'attendance tracking', 'fee management'],
-  authors: [{ name: 'ClassPilot' }],
-  creator: 'ClassPilot',
-  publisher: 'ClassPilot',
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'https://classpilot.app'),
-  alternates: { canonical: '/' },
-  openGraph: {
-    type: 'website',
-    siteName: 'ClassPilot',
-    title: 'ClassPilot — Run your coaching center in one place',
-    description: 'A focused workspace for coaching centers to manage people, classes, attendance, fees, and results.',
-    url: '/',
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'ClassPilot — Run your coaching center in one place',
-    description: 'A focused workspace for coaching centers to manage people, classes, attendance, fees, and results.',
-  },
-  generator: 'v0.app',
-  icons: {
-    icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
-    ],
-    apple: '/apple-icon.png',
-  },
-}
-
-export const viewport: Viewport = {
-  colorScheme: 'light dark',
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
-    { media: '(prefers-color-scheme: dark)', color: '#131722' },
-  ],
-}
-
-export default function RootLayout({
+export default async function AppLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode
-}>) {
+}) {
+  const userContext = await getUserContext()
+  if (!userContext) {
+    // Signed in but no organisation yet -> finish setup. (Sending them to /login loops, because
+    // the proxy bounces signed-in users from /login straight back to /dashboard.)
+    const { data: { user } } = await (await createClient()).auth.getUser()
+    redirect(user ? '/onboarding' : '/login')
+  }
+
+  const billing = await getOrganizationBillingState(userContext.organization.id, userContext.organization.plan)
+  const isOwner = userContext.role === 'owner'
+
+  // Unpaid for more than the grace period: the whole organisation is shut down.
+  if (billing.kind === 'suspended') {
+    return <SuspendedScreen state={billing} isOwner={isOwner} orgName={userContext.organization.name} />
+  }
+
   return (
-    <html
-      lang="en"
-      className={`bg-background ${inter.variable} ${jakarta.variable}`}
-    >
-      <body className="font-sans antialiased">
-        <TooltipProvider>{children}</TooltipProvider>
-        <Toaster />
-        {process.env.NODE_ENV === 'production' && <Analytics />}
-      </body>
-    </html>
+    <SidebarProvider>
+      <AppSidebar userContext={userContext} />
+      <SidebarInset>
+        <AppTopbar userContext={userContext} />
+        <div className="flex flex-1 flex-col gap-6 p-4 sm:p-6">{children}</div>
+      </SidebarInset>
+      {billing.kind === 'grace' && <PaymentDuePopup state={billing} isOwner={isOwner} orgName={userContext.organization.name} />}
+    </SidebarProvider>
   )
 }
