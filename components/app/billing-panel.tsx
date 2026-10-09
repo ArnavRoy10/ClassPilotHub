@@ -1,90 +1,52 @@
 'use client'
 
 import { useState } from 'react'
-import { Check, Loader2, Clock } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import { AlertTriangle, CalendarClock, Check, Clock, Loader2 } from 'lucide-react'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { getDaysRemaining } from '@/lib/billing-utils'
-
-const plans = [
-  { id: 'solo', name: 'Solo Tutor', price: '₹299', limits: '50 students · 5 teachers' },
-  { id: 'starter', name: 'Starter', price: '₹499', limits: '150 students · 15 teachers' },
-  { id: 'growth', name: 'Growth', price: '₹999', limits: '500 students · 40 teachers' },
-  { id: 'pro', name: 'Pro', price: '₹1,999', limits: 'Unlimited students · 100 teachers' },
-] as const
+import { useRazorpayCheckout } from '@/components/app/use-razorpay-checkout'
+import { formatDate, type BillingState } from '@/lib/billing-state'
+import { PLAN_ORDER, PLANS, formatINR, type PlanId } from '@/lib/plans'
 
 type Props = {
-  organization: { id: string; name: string; plan: string; max_students: number; max_teachers: number }
-  subscription: {
-    plan: string
-    status: string
-    stripe_subscription_id: string | null
-    cancel_at_period_end: boolean
-    current_period_end: string | null
-    trial_end: string | null
-  } | null
+  organization: { id: string; name: string; max_students: number; max_teachers: number }
+  subscription: { stripe_subscription_id?: string | null; cancel_at_period_end?: boolean | null } | null
   usage: { student_count: number; teacher_count: number } | null
+  state: BillingState
+  canManage: boolean
 }
 
-declare global {
-  interface Window {
-    Razorpay: new (options: Record<string, unknown>) => { open: () => void }
-  }
+const statusBadge: Record<BillingState['kind'], { label: string; className: string }> = {
+  trial: { label: 'Free trial', className: 'bg-secondary text-secondary-foreground' },
+  active: { label: 'Active', className: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' },
+  grace: { label: 'Payment due', className: 'bg-destructive/10 text-destructive' },
+  suspended: { label: 'Suspended', className: 'bg-destructive/10 text-destructive' },
+  unknown: { label: 'Free trial', className: 'bg-secondary text-secondary-foreground' },
 }
 
-function loadRazorpayScript(): Promise<boolean> {
-  return new Promise((resolve) => {
-    if (typeof window !== 'undefined' && window.Razorpay) {
-      resolve(true)
-      return
-    }
-    const script = document.createElement('script')
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js'
-    script.onload = () => resolve(true)
-    script.onerror = () => resolve(false)
-    document.body.appendChild(script)
-  })
-}
-
-export function BillingPanel({ organization, subscription, usage }: Props) {
+export function BillingPanel({ organization, subscription, usage, state, canManage }: Props) {
+  const router = useRouter()
+  const { busy: checkoutBusy, checkout } = useRazorpayCheckout()
   const [busy, setBusy] = useState<string | null>(null)
-  const activePlan = subscription?.plan ?? organization.plan
-  const status = subscription?.status ?? 'trialing'
-  const daysInfo = getDaysRemaining(subscription)
+  const working = busy !== null || checkoutBusy !== null
+  const plan = PLANS[state.planId]
+  const badge = statusBadge[state.kind]
 
-  async function startCheckout(plan: string) {
-    setBusy(plan)
+  async function selectTrialPlan(planId: PlanId) {
+    setBusy(planId)
     try {
-      const scriptLoaded = await loadRazorpayScript()
-      if (!scriptLoaded) throw new Error('Unable to load Razorpay checkout. Check your connection and try again.')
-
-      const response = await fetch('/api/billing/razorpay', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ plan }),
-      })
-      const result = await response.json()
-      if (!response.ok) throw new Error([result.error ?? 'Unable to start checkout.', result.detail].filter(Boolean).join(' '))
-
-      const razorpayCheckout = new window.Razorpay({
-        key: result.keyId,
-        subscription_id: result.subscriptionId,
-        name: 'ClassPilot',
-        description: `${result.plan} plan`,
-        theme: { color: '#5b8cff' },
-        handler: () => {
-          toast.success('Payment received — activating your plan…')
-          setTimeout(() => window.location.reload(), 1500)
-        },
-        modal: {
-          ondismiss: () => setBusy(null),
-        },
-      })
-      razorpayCheckout.open()
+      const response = await fetch('/api/billing/plan', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ plan: planId }) })
+      const result = (await response.json()) as { error?: string }
+      if (!response.ok) throw new Error(result.error ?? 'Unable to change plan.')
+      toast.success(`${PLANS[planId].name} selected. Payment starts after your free trial.`)
+      router.refresh()
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Unable to start checkout')
+      toast.error(error instanceof Error ? error.message : 'Unable to change plan')
+    } finally {
       setBusy(null)
     }
   }
@@ -93,97 +55,125 @@ export function BillingPanel({ organization, subscription, usage }: Props) {
     setBusy('cancel')
     try {
       const response = await fetch('/api/billing/cancel', { method: 'POST' })
-      const result = await response.json()
-      if (!response.ok) throw new Error(result.error)
-      toast.success('Your subscription will cancel at the end of the current period.')
-      window.location.reload()
+      const result = (await response.json()) as { error?: string }
+      if (!response.ok) throw new Error(result.error ?? 'Unable to cancel subscription.')
+      toast.success('Your plan will end at the end of the current period.')
+      router.refresh()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to cancel subscription')
+    } finally {
       setBusy(null)
     }
+  }
+
+  function buttonFor(planId: PlanId) {
+    const isCurrent = planId === state.planId
+    const label = (text: string) => (<>{(busy === planId || checkoutBusy === planId) && <Loader2 className="mr-2 animate-spin" />}{text}</>)
+
+    if (!canManage) return { disabled: true, variant: 'secondary' as const, content: label(isCurrent ? 'Current plan' : 'Owner only'), onClick: () => {} }
+
+    // Overdue: the only thing allowed is paying the current plan.
+    if (state.mustPay) {
+      return isCurrent
+        ? { disabled: working, variant: 'default' as const, content: label(`Pay ${formatINR(state.amountDue)} now`), onClick: () => checkout(planId) }
+        : { disabled: true, variant: 'secondary' as const, content: label('Pay pending bill first'), onClick: () => {} }
+    }
+
+    if (state.kind === 'active') {
+      if (isCurrent && !state.cancelAtPeriodEnd) return { disabled: true, variant: 'secondary' as const, content: label('Current plan'), onClick: () => {} }
+      return { disabled: working, variant: 'default' as const, content: label(isCurrent ? 'Renew this plan' : 'Switch at renewal'), onClick: () => checkout(planId) }
+    }
+
+    // Free trial (or no dates on record): choosing a plan is free, payment comes after the trial.
+    if (isCurrent) return { disabled: true, variant: 'secondary' as const, content: label('Selected'), onClick: () => {} }
+    return { disabled: working, variant: 'default' as const, content: label('Select plan'), onClick: () => selectTrialPlan(planId) }
   }
 
   return (
     <div className="flex flex-col gap-6">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+          <CardTitle className="flex flex-wrap items-center gap-2">
             Current Plan
-            {daysInfo.days > 0 && (
-              <Badge variant={daysInfo.isTrial ? 'secondary' : 'outline'} className="font-normal">
-                <Clock className="w-3 h-3 mr-1" />
-                {daysInfo.label}
-              </Badge>
-            )}
+            <Badge className={`font-normal ${badge.className}`}>{badge.label}</Badge>
           </CardTitle>
-          <CardDescription>{organization.name} · {status.replaceAll('_', ' ')}</CardDescription>
+          <CardDescription>{organization.name}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-2xl font-semibold capitalize">{activePlan} plan</p>
+            <p className="text-2xl font-semibold">{plan.name} plan <span className="text-base font-normal text-muted-foreground">{formatINR(plan.monthly)}/month</span></p>
             <p className="text-sm text-muted-foreground">
               {usage?.student_count ?? 0}/{organization.max_students} students · {usage?.teacher_count ?? 0}/{organization.max_teachers} teachers
             </p>
           </div>
-          {subscription?.stripe_subscription_id && !subscription.cancel_at_period_end && (
-            <Button variant="outline" onClick={cancelSubscription} disabled={busy !== null}>
-              {busy === 'cancel' && <Loader2 className="animate-spin mr-2" />}
+          {canManage && state.kind === 'active' && subscription?.stripe_subscription_id && !state.cancelAtPeriodEnd && (
+            <Button variant="outline" onClick={cancelSubscription} disabled={working}>
+              {busy === 'cancel' && <Loader2 className="mr-2 animate-spin" />}
               Cancel at period end
             </Button>
           )}
         </CardContent>
       </Card>
 
-      {daysInfo.isTrial && daysInfo.days > 0 && (
-        <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200 dark:from-blue-950 dark:to-indigo-950 dark:border-blue-800">
-          <CardContent className="py-4">
-            <p className="text-sm text-blue-800 dark:text-blue-200">
-              <strong>Free Trial:</strong> You have {daysInfo.days} day{daysInfo.days !== 1 ? 's' : ''} left to try all features.
-              Upgrade now to continue without interruption.
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
-      {!daysInfo.isTrial && subscription?.status === 'active' && daysInfo.days > 0 && (
-        <Card className="bg-muted/50">
-          <CardContent className="py-4">
-            <p className="text-sm text-muted-foreground">
-              Your subscription renews in {daysInfo.days} day{daysInfo.days !== 1 ? 's' : ''} ({new Date(subscription.current_period_end!).toLocaleDateString()})
-            </p>
+      {state.mustPay ? (
+        <Alert variant="destructive">
+          <AlertTriangle />
+          <AlertTitle>{formatINR(state.amountDue)} is overdue</AlertTitle>
+          <AlertDescription>
+            Your {state.overdueReason === 'trial' ? 'free trial' : `${state.planName} plan`} ended on {formatDate(state.periodEnd)}.
+            Pay by {formatDate(state.suspendsAt)} ({state.daysLeft} day{state.daysLeft === 1 ? '' : 's'} left) or your organisation will be suspended.
+            Plans can be changed once the bill is cleared.
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <Card className="bg-muted/40">
+          <CardContent className="flex items-start gap-3 py-4">
+            {state.kind === 'trial' ? <Clock className="mt-0.5 size-4 text-muted-foreground" /> : <CalendarClock className="mt-0.5 size-4 text-muted-foreground" />}
+            <div className="text-sm">
+              {state.kind === 'trial' && (
+                <>
+                  <p className="font-medium">Free trial ends on {formatDate(state.periodEnd)} ({state.daysLeft} day{state.daysLeft === 1 ? '' : 's'} left)</p>
+                  <p className="text-muted-foreground">You will need to pay {formatINR(state.amountDue)} for the {state.planName} plan after the trial. Nothing is charged until then, and you can change plan freely before it ends.</p>
+                </>
+              )}
+              {state.kind === 'active' && !state.cancelAtPeriodEnd && (
+                <>
+                  <p className="font-medium">Plan valid until {formatDate(state.periodEnd)} ({state.daysLeft} day{state.daysLeft === 1 ? '' : 's'} left)</p>
+                  <p className="text-muted-foreground">Next payment: {formatINR(state.amountDue)} on {formatDate(state.periodEnd)}. A plan change takes effect from that date.</p>
+                </>
+              )}
+              {state.kind === 'active' && state.cancelAtPeriodEnd && (
+                <>
+                  <p className="font-medium">Your plan ends on {formatDate(state.periodEnd)} ({state.daysLeft} day{state.daysLeft === 1 ? '' : 's'} left)</p>
+                  <p className="text-muted-foreground">It will not renew. To continue, renew before it ends: {formatINR(state.amountDue)}/month.</p>
+                </>
+              )}
+              {(state.kind === 'unknown') && <p className="text-muted-foreground">No billing dates on record yet.</p>}
+            </div>
           </CardContent>
         </Card>
       )}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {plans.map((plan) => {
-          const current = activePlan === plan.id
+        {PLAN_ORDER.map((id) => {
+          const item = PLANS[id]
+          const action = buttonFor(id)
           return (
-            <Card key={plan.id} className={current ? 'ring-2 ring-primary' : ''}>
+            <Card key={id} className={id === state.planId ? 'ring-2 ring-primary' : ''}>
               <CardHeader>
-                <CardTitle>{plan.name}</CardTitle>
-                <CardDescription>{plan.limits}</CardDescription>
+                <CardTitle>{item.name}</CardTitle>
+                <CardDescription>{item.limits}</CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
                 <p className="text-2xl font-semibold">
-                  {plan.price}
+                  {formatINR(item.monthly)}
                   <span className="text-sm font-normal text-muted-foreground">/month</span>
                 </p>
-
                 <ul className="flex flex-col gap-2 text-sm text-muted-foreground">
                   <li className="flex gap-2"><Check className="size-4 text-primary" />Unlimited attendance</li>
                   <li className="flex gap-2"><Check className="size-4 text-primary" />Reports and notifications</li>
                 </ul>
-
-                <Button
-                  className="w-full"
-                  variant={current ? 'secondary' : 'default'}
-                  disabled={current || busy !== null}
-                  onClick={() => startCheckout(plan.id)}
-                >
-                  {busy === plan.id && <Loader2 className="animate-spin mr-2" />}
-                  {current ? 'Current plan' : 'Choose plan'}
-                </Button>
+                <Button className="w-full" variant={action.variant} disabled={action.disabled} onClick={action.onClick}>{action.content}</Button>
               </CardContent>
             </Card>
           )
