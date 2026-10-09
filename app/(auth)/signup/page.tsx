@@ -119,6 +119,7 @@ function SignupForm() {
           <Field><FieldLabel htmlFor="email">Work email</FieldLabel><Input id="email" name="email" type="email" autoComplete="email" placeholder="you@yourcenter.com" required /></Field>
           <Field><FieldLabel htmlFor="password">Password</FieldLabel><Input id="password" name="password" type="password" autoComplete="new-password" placeholder="At least 8 characters" minLength={8} required /><FieldDescription>Use 8 or more characters with a mix of letters and numbers.</FieldDescription></Field>
           <Button type="submit" className="w-full" disabled={loading}>{loading ? 'Creating account…' : `Create ${plan} account`}</Button>
+           You won&apos;t be charged during the 14-day free trial, and you can change your plan any time while your bill is clear.
         </FieldGroup>
       </form>
 
