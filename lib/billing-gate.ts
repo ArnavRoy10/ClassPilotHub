@@ -3,13 +3,33 @@ import 'server-only'
 import { NextResponse } from 'next/server'
 import { getAdminClient } from '@/lib/supabase/admin'
 import { getUserContext } from '@/lib/supabase/user-context'
-import { computeBillingState, type BillingState } from '@/lib/billing-state'
+import { TRIAL_DAYS, computeBillingState, type BillingState } from '@/lib/billing-state'
+
+const DAY_MS = 86_400_000
 
 export async function getOrganizationBillingState(organizationId: string, organizationPlan?: string | null): Promise<BillingState> {
   // Admin client on purpose: teachers, students and parents may not be able to read the
   // subscriptions table under RLS, but they must still be locked out when the bill is unpaid.
   // organizationId always comes from the signed-in user's own profile (getUserContext).
-  const { data: subscription } = await getAdminClient().from('subscriptions').select('*').eq('organization_id', organizationId).maybeSingle()
+  const admin = getAdminClient()
+  const { data: found } = await admin.from('subscriptions').select('*').eq('organization_id', organizationId).maybeSingle()
+  let subscription = found
+
+  // Self-heal: an organisation with no dates on record would never leave its trial.
+  // Start the 14 days from when the organisation (or its subscription row) was created.
+  if (!subscription || (!subscription.trial_end && !subscription.current_period_end)) {
+    const { data: org } = await admin.from('organizations').select('*').eq('id', organizationId).maybeSingle()
+    const createdAt = new Date(subscription?.created_at ?? org?.created_at ?? Date.now())
+    const startedAt = Number.isNaN(createdAt.getTime()) ? Date.now() : createdAt.getTime()
+    const trialEnd = new Date(startedAt + TRIAL_DAYS * DAY_MS).toISOString()
+
+    const { error } = subscription
+      ? await admin.from('subscriptions').update({ trial_end: trialEnd }).eq('organization_id', organizationId)
+      : await admin.from('subscriptions').insert({ organization_id: organizationId, plan: 'free', status: 'trialing', trial_end: trialEnd })
+    if (error) console.error('Unable to start trial period:', error.code, error.message)
+    subscription = { ...(subscription ?? { status: 'trialing', plan: 'free' }), trial_end: trialEnd }
+  }
+
   return computeBillingState(subscription, organizationPlan)
 }
 
