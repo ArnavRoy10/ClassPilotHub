@@ -112,7 +112,7 @@ function SignupForm() {
             <select id="plan" value={plan ?? ''} onChange={(event) => setPlan(event.target.value)} className="border-input bg-background text-foreground focus-visible:border-ring focus-visible:ring-ring/50 flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs outline-none focus-visible:ring-[3px]">
               {isSoloTutor ? <option value="Solo Tutor">Solo Tutor — ₹299/month</option> : coachingPlans.map((coachingPlan) => <option key={coachingPlan} value={coachingPlan}>{coachingPlan} — {coachingPlan === 'Starter' ? '₹499' : coachingPlan === 'Growth' ? '₹999' : '₹1,999'}/month</option>)}
             </select>
-            <FieldDescription>{isSoloTutor ? 'Solo Tutor includes exactly 1 teacher and up to 50 students.' : 'Coaching Center plans support multiple teachers and larger student limits.'}</FieldDescription>
+            <FieldDescription>{isSoloTutor ? 'Solo Tutor includes exactly 1 teacher and up to 50 students.' : 'Coaching Center plans support multiple teachers and larger student limits.'} You won&apos;t be charged during the 14-day free trial, and you can change your plan any time while your bill is clear.</FieldDescription>
           </Field>
           <Field><FieldLabel htmlFor="center">Center or tutoring name</FieldLabel><Input id="center" name="center" placeholder={isSoloTutor ? 'Ananya Tutoring' : 'Bright Future Academy'} required /></Field>
           <Field><FieldLabel htmlFor="name">Your name</FieldLabel><Input id="name" name="name" placeholder="Ananya Sharma" autoComplete="name" required /></Field>
