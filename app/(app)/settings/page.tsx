@@ -1,3 +1,4 @@
+import { getOrganizationBillingState } from '@/lib/billing-gate'
 import { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
