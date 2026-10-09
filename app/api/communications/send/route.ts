@@ -9,7 +9,7 @@ export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const locked = await organizationSuspendedResponse()
+    const locked = await organizationSuspendedResponse()
   if (locked) return locked
   const payload = await request.json().catch(() => null)
   const channel = payload?.channel
