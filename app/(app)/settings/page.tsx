@@ -30,6 +30,7 @@ export default async function SettingsPage() {
   }
 
   const { organization, subscription, usage, profile } = context
+  const billingState = await getOrganizationBillingState(organization.id, organization.plan)
   const billingState = computeBillingState(subscription, organization.plan)
 
   return (
@@ -106,13 +107,13 @@ export default async function SettingsPage() {
 
         {/* Billing Tab - THIS IS WHERE THE BILLING PANEL IS RENDERED */}
         <TabsContent value="billing" className="mt-6">
-          <BillingPanel 
-            organization={organization} 
-            subscription={subscription} 
+        <BillingPanel
+            organization={organization}
+            subscription={subscription}
             usage={usage}
             state={billingState}
             canManage={profile.role === 'owner'}
-          />
+        />
         </TabsContent>
       </Tabs>
     </div>
