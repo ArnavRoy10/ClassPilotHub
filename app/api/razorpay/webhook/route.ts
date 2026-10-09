@@ -1,3 +1,4 @@
+import { PLANS, normalizePlan } from '@/lib/plans'
 import { NextResponse } from 'next/server'
 import { getAdminClient } from '@/lib/supabase/admin'
 import { verifyRazorpaySignature } from '@/lib/razorpay'
@@ -54,7 +55,7 @@ export async function POST(request: Request) {
       await adminClient.from('subscriptions').update({ status: 'past_due', updated_at: new Date().toISOString() }).eq('organization_id', organizationId)
     }
     // 'created' / 'authenticated' are deliberately ignored: they must not overwrite a running
-    // free trial or an already-paid plan (this used to flip trials to "incomplete").
+    // free trial or an already-paid plan.
   }
 
   // Payment Links: a parent finished paying via a fee payment link
